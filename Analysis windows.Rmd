@@ -1,0 +1,35 @@
+---
+title: "Assignment 1"
+author: "Alejandro"
+date: "August 7, 2017"
+output: html_document
+---
+# Window Analysis of Genomic Diversity
+
+Using the simulated datafile 11 multiple genomic diversity analysis will be performed using sliding windows analysis. 
+```{r}
+library(PopGenome)
+#first we load data from adjacent folder that contains SNPs
+simulation <- readData(path = "simulation/",format="Fasta",SNP.DATA = T)
+position1 <- unlist(read.table("sweep_posID11.txt")) #associate data with positions
+simulation <- set.ref.positions(simulation,list(position1))
+```
+
+To calculate the sliding windows we will need to know the range of positions that we are working with. 
+```{r}
+#get the range of our data to define sliding windows for the analysis
+get.sum.data(simulation)
+range<-range(simulation@region.data@biallelic.sites)
+#definition of sliding windows
+sim_sw<- sliding.window.transform(simulation,width=5000,
+                                   jump=5000,start.pos = range[1],
+                                   end.pos =range[2], type=2,whole.data=TRUE)
+```
+
+Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson) and Tajima's $D$ (. We do this with *neutrality.stats*, which actually calculates a ton of statistical measures. We will see a whole table with 
+```{r}
+sim_sw <- neutrality.stats(sim_sw) #this adds into the sim_sw GENOME file a series of diversity statistics, including 
+lapply(get.neutrality(sim_sw, theta=T),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
+
+```
+
