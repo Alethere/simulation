@@ -6,7 +6,8 @@ simulation <- set.ref.positions(simulation,list(position1))
 #get the range of our data to define sliding windows for the analysis
 str(simulation)
 get.sum.data(simulation)
-range<-range(simulation@region.data@biallelic.sites)
+range<-.
+
 #definition of sliding windows
 sim_sw<- sliding.window.transform(simulation,width=5000,
                                    jump=5000,start.pos = range[1],
@@ -25,8 +26,10 @@ summary(sim_sw@theta_Watterson)
 #From PopGenome vignette, extract the regions' coordinates
 xaxis2 <- strsplit(sim_sw@region.names,split=" : ")
 xaxis2 <- sapply(xaxis2,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})
-plot(xaxis2,sim_sw@theta_Tajima[,1],col=c("blue"),type="l",xlab="Simulated data",ylab="nucleotide diversity (in 1kb window)",ylim=data_range)
+data_range <- range(sim_sw@theta_Tajima,na.rm = TRUE)
+plot(xaxis2,sim_sw@theta_Tajima[,1],col=c("blue"),type="l",xlab="Simulated data",
+     ylab="nucleotide diversity (in 1kb window)",ylim=data_range)
 
 #looks awful...let's smooth the curves (see again PopGenome vignette)
-data_range <- range(sim_sw@theta_Tajima,na.rm = TRUE)
+
 aux2 <- 1:length(sim_sw@region.names) #needed for smoothening
