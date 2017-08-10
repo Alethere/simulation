@@ -40,15 +40,15 @@ Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson)
 ```{r}
 sim_sw <- neutrality.stats(sim_sw) #this adds into the sim_sw GENOME file a series of diversity statistics, including 
 #lapply(get.neutrality(sim_sw),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
-summary(sim_sw@Tajima.D);summary(sim_sw@theta_Tajima);summary(sim_sw@theta_Watterson)
-broom(lapply(get.neutrality(sim_sw,theta=T),summary))
-lapply(c(sim_sw@theta_Tajima, sim_sw@theta_Watterson, sim_sw@Tajima.D),summary)
+lapply(get.neutrality(sim_sw,theta=T),summary)
+strsplit(as.vector(summary(sim_sw@theta_Tajima)),":")
 ```
 
 We can plot the estimated parameters in a graph, per window, to have an idea of what regions might be affected by a selective sweep.
 ```{r}
 xaxis <- strsplit(sim_sw@region.names,split=" : ")
 xaxis <- sapply(xaxis,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})
+
 plot(xaxis,sim_sw@theta_Tajima,type="l",ylab="Indexes values",xlab="Nucleotide positions")
 plot(xaxis,sim_sw@theta_Watterson,type="l",col="blue")
 plot(xaxis,sim_sw@Tajima.D,type="l",col="red")
