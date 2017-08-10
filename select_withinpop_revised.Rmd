@@ -1,0 +1,343 @@
+---
+title: "Sweep patterns - within population"
+author: "F. Freund"
+date: "August 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,eval=TRUE, messages=FALSE,warning = FALSE)
+```
+
+# Overview
+ 
+We want to analyze the genetic diversity within a region (map position 265 Mb to 268 Mb)  on Chromosome 1 in sets of accessions from teosinte and maize (landraces and improved varieties of the latter).
+
+Compute
+
+ * Watterson's estimator $\theta_w$ and nucleotide diversity $\Pi$
+ * The number of haplotypes $K$ 
+ * Tajima's $D$
+ * The $CLR$ statistic 
+
+across sliding windows over the genetic region. Compare the observed values to simulations under the SNM and identify selection candidates.
+
+**Every time you have a § in the code, you have to replace it yourself with the right entry**
+
+# Used programs/packages
+
+We use the R package PopGenome and simulate with `msprime` (installed within the virtual machine)
+
+```{r packages}
+library(PopGenome)
+```
+
+# Reading in data
+
+ * Put the compressed vcf-file `maize_ells_chr1.recode.vcf.gz` into your working directory. Unpack the file into a subfolder `data_vcf`
+ 
+```{bash unpack,eval=FALSE}
+#mkdir data_vcf #In case the subdirectory does not yet exist
+gunzip -k maize_ells_chr1.recode.vcf.gz 
+mv maize_ells_chr1.recode.vcf data_vcf/mays_ells.vcf
+```
+ 
+ 
+ * Put the accession files `parvi_set.txt` (teosinte **zea mays parviglumis** accessions), `lr_set.txt` (maize landraces) and `german_set.txt` in the working directory
+ 
+ 
+```{r read_in_data,tidy=FALSE}
+data_zea <- readData(path = "data_vcf",format="VCF",
+                     populations=list(teosinte=as.character(unlist(read.table("parvi_set.txt"))),
+                     landraces=as.character(unlist(read.table("lr_set.txt"))),
+                     improved=as.character(unlist(read.table("german_set.txt")))))
+```
+
+Have a first look at the data
+
+```{r data_summary}
+#str(data_zea)
+get.sum.data(data_zea)
+range(data_zea@region.data@biallelic.sites) #shows the range of SNP positions
+```
+ * How many SNPs does the region contain? How long is the region?
+ * How many individuals are in each population?
+
+# Sliding windows: definition and analysis
+
+We need to generate a new `GENOME` object which defines the window regions 
+
+```{r sliding_windows,tidy=FALSE}
+zea_sw <- sliding.window.transform(data_zea,width=10000,
+                                   jump=10000,start.pos = 265000000,
+                                   end.pos = 268000000, type=2,whole.data=TRUE)
+```
+
+ 
+## Computing $\Pi$, $\theta_w$ and Tajima's $D$ 
+
+Nucleotide diversity as an estimator of the scaled mutation rate $\theta$ was introduced by Tajima, so it is often called Tajima's $\theta$
+ 
+```{r div1_compute}
+zea_sw <- neutrality.stats(zea_sw)
+#get.neutrality(zea_sw) #see overall sturcture of the computed slots
+#lapply(get.neutrality(zea_sw),summary) #What does this command do?
+#nucleotide diversity 
+summary(zea_sw@theta_Tajima)
+#str(zea_sw@theta_Tajima)
+#Watterson estimator
+summary(zea_sw@theta_Watterson)
+```
+ * Extract a summary of nucleotide diversity only for landraces. What is the mean across windows for landraces?
+ * What happens if you double/halve the window sizes?
+
+Now, we plot these values
+```{r div1_plots,tidy=FALSE}
+#From PopGenome vignette, extract the regions' coordinates
+xaxis <- strsplit(zea_sw@region.names,split=" : ")
+xaxis <- sapply(xaxis,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})
+
+plot(xaxis,zea_sw@theta_Tajima[,1],col=c("blue"),type="l")
+points(xaxis,zea_sw@theta_Tajima[,2],col=c("red"),type="l")
+points(xaxis,zea_sw@theta_Tajima[,3],col=c("black"),type="l")
+
+#looks awful...let's smooth the curves (see again PopGenome vignette)
+data_range <- range(zea_sw@theta_Tajima,na.rm = TRUE)
+aux1 <- 1:length(zea_sw@region.names) #needed for smoothening
+
+loess_nucdiv <- list(loess(zea_sw@theta_Tajima[,1]~aux1,span=0.05),
+                     loess(zea_sw@theta_Tajima[,2]~aux1,span=0.05),
+                     loess(zea_sw@theta_Tajima[,3]~aux1,span=0.05))
+
+plot(predict(loess_nucdiv[[1]]),col=c("blue"),type="l",
+             xlab="Position in Mb on CHR1",ylab="nucleotide diversity (in 10 kb window)",
+             xaxt="n",ylim=data_range)
+points(predict(loess_nucdiv[[2]]),col=c("red"),type="l")
+points(predict(loess_nucdiv[[3]]),col=c("black"),type="l")
+axis(1,seq(0,300,100),as.character(265:268)) #plotting the fitted object messes up the x-axis
+legend("topright",legend=c("landraces","teosinte","improved"),col=c("red","blue","black"),lty=c(1,1,1))
+```
+ * Complete the plot legend
+ * What does the plot show us? 
+ * Plot Watterson's estimator, too. For this, write a function `plot_div_win(divdata,ylab1)`, where divdata is the matrix of diversity measures to plot and ylab1 the label of the $y$-axis (we will continue to use this function later). 
+
+## Computing the number of haplotypes (DEMONSTRATION, OPTIONAL)
+
+
+```{r no_haplotypes,eval=FALSE}
+zea_sw <- F_ST.stats(zea_sw,only.haplotype.counts=TRUE) 
+str(zea_sw@region.stats@haplotype.counts[[1]]) # See the structure of the object
+zea_sw@region.stats@haplotype.counts[[1]]      # to see how to work with it
+table(sapply(zea_sw@region.stats@haplotype.counts,is.matrix)) #Are entries matrices?
+extract_haplo <- function(m){if (is.matrix(m)){out1 <- apply(m,1,sum)}
+                             else {out1 <- rep(NA,3)}
+                            return(out1)}
+                             
+haplocount <- sapply(zea_sw@region.stats@haplotype.counts,extract_haplo)
+haplocount[,1:10] #we should a) divide by no of acc. per pop and b) exchange rows and columns
+haplocount <- haplocount/sapply(zea_sw@populations,length) #divide by length
+haplocount <- t(haplocount) #we want the 3 pop's to be columns, not rows
+apply(haplocount,1,unique)
+```
+
+ * What does this result tell us? How could we proceed?
+ 
+# Further diversity measures 
+
+We will plot Tajima's $D$ and then compute and plot $CLR$ across the windows
+
+
+```{r div2}
+#Loess plot Tajima's D
+data_range <- range(zea_sw@Tajima.D,na.rm = TRUE)
+aux1 <- 1:length(zea_sw@region.names) #needed for smoothening
+
+loess_nucdiv <- list(loess(zea_sw@Tajima.D[,1]~aux1,span=0.05),
+                     loess(zea_sw@Tajima.D[,2]~aux1,span=0.05),
+                     loess(zea_sw@Tajima.D[,3]~aux1,span=0.05))
+
+plot(predict(loess_nucdiv[[1]]),col=c("blue"),type="l",
+             xlab="Position in Mb on CHR1",ylab="Tajima's D (in 10 kb window)",
+             xaxt="n",ylim=data_range)
+points(predict(loess_nucdiv[[2]]),col=c("red"),type="l")
+points(predict(loess_nucdiv[[3]]),col=c("black"),type="l")
+axis(1,seq(0,300,100),as.character(265:268)) #plotting the fitted object messes up the x-axis
+legend("topright",legend=c("landraces","teosinte","improved"),col=c("red","blue","black"),lty=c(1,1,1))
+
+#Compute CLR
+#We need the overall MAFs for CLR, see PopGenome vignette
+zea_sw <- detail.stats(zea_sw)
+freq_pop1 <- sapply(zea_sw@region.stats@minor.allele.freqs,function(x){return(x[1,])})
+freq_pop2 <- sapply(zea_sw@region.stats@minor.allele.freqs,function(x){return(x[2,])})
+freq_pop3 <- sapply(zea_sw@region.stats@minor.allele.freqs,function(x){return(x[3,])})
+freq_pop1 <- table(unlist(freq_pop1))
+freq_pop2 <- table(unlist(freq_pop2))
+freq_pop3 <- table(unlist(freq_pop3))
+zea_sw<- sweeps.stats(zea_sw, freq.table=list(freq_pop1,freq_pop2,freq_pop3))
+
+#Loess plot CLR
+data_range <- range(zea_sw@CLR,na.rm = TRUE)
+aux1 <- 1:length(zea_sw@region.names) #needed for smoothening
+
+loess_nucdiv <- list(loess(zea_sw@CLR[,1]~aux1,span=0.05),
+                     loess(zea_sw@CLR[,2]~aux1,span=0.05),
+                     loess(zea_sw@CLR[,3]~aux1,span=0.05))
+
+plot(predict(loess_nucdiv[[1]]),col=c("blue"),type="l",
+             xlab="Position in Mb on CHR1",ylab="CLR (in 10 kb window)",
+             xaxt="n",ylim=data_range)
+points(predict(loess_nucdiv[[2]]),col=c("red"),type="l")
+points(predict(loess_nucdiv[[3]]),col=c("black"),type="l")
+axis(1,seq(0,300,100),as.character(265:268)) #plotting the fitted object messes up the x-axis
+legend("topright",legend=c("landraces","teosinte","improved"),col=c("red","blue","black"),lty=c(1,1,1))
+
+
+```
+
+# Search for selection loci
+## First look: look for the most extreme deviations across windows 
+The easiest way to look for candidate regions is to extract the windows with most extreme diversity values (extreme in a way consistent with a sweep). We will focus only on the landraces (time reasons...).
+
+We pick the 20 windows with smallest diversity ($\theta_w$ and $\Pi$) in landraces (if several windows tie in low diversity with 
+10th lowest, we extract all). We do the same for the 10 windows with highest CLR
+
+```{r extreme_div}
+(thres_pi <- sort(zea_sw@theta_Tajima[,2])[10]) #sorts in increasing order
+cand_pi <- which(zea_sw@theta_Tajima[,2]<=thres_pi)
+
+(thres_watt <- sort(zea_sw@theta_Watterson[,2])[10])
+cand_watt <- which(zea_sw@theta_Watterson[,2]<=thres_watt)
+
+(thres_clr <- sort(zea_sw@CLR[,2],decreasing=TRUE)[10])
+cand_clr <- which(zea_sw@CLR[,2]>=thres_clr)
+
+
+plot(cand_pi,rep(3,length(cand_pi)),col="red",ylim=c(0,4),
+     xlab="window index",ylab="")
+points(cand_clr,rep(1,length(cand_clr)),col="black")
+points(cand_watt,rep(2,length(cand_watt)),col="blue")
+legend("topright",legend=c("Nucleotide diversity","Watterson's estimator","CLR"),col=c("red","blue","black"),lty=c(1,1,1))
+#Search for common extreme windows
+intersect(cand_clr,cand_watt)
+intersect(cand_clr,cand_pi)
+cand_div <- intersect(cand_pi,cand_watt)
+```
+
+## Compare with coalescent simulations
+For nucleotide diversity $\Pi$ and CLR, we want to compare our results for windows with coalescent simulations. For this, we simulate a region 
+
+ * of length 3 Mb 
+ * scaled recombination rate $\rho=0.05$ estimate for maize from the literature (see Wright, Stephen I., et al. "The effects of artificial selection on the maize genome." Science 308.5726 (2005): 1310-1314). We specify that we 
+ * $\theta$ given Wattersons's estimator (over the whole region we looked at) 
+ * Each simulation run should simulate as many sequences as we have from landraces (so 2 times sample size)
+
+We use `msprime` for simulation (installed on the VM), a command line tool which we call from R with `system`. The syntax is (?argument? are the parameters to be specified):
+
+\texttt{mspms ?nsamp? ?nsimul? --mutation-rate ?theta? --recombination ?rho? ?numberofrecomb.breaks? ??},
+
+where 
+
+ * `nsamp`: sample size (of sequences, matching the observed data)
+ * `nsimul`: number of simulated samples (we take 10, which is too low, 1,000+ more reasonable)
+ * $\theta$: scaled mutation rate
+ * $\rho$: scaled recombination rate
+ * numberofrecomb.breaks: At how many positions may recombination act? (We say every 100 bp, so 30,000 break points)
+
+`msprime` can simulate $n$-coalescents in much more complex models than the SNM with recombination, see its [`documentation`](https://msprime.readthedocs.io/en/latest/)
+
+Each simulated sample will be read into a PopGenome object, split into windows (with on average the same number of SNPs) and both statistics will be computed across windows. Then, we follow Nielsen et al. '05 and compare the observed values to the maximum value for windows in each simulation, so we test whether the observed genome has more extreme values than a modelled neutral one. This is just an approximate test, since we do use not exactly the right windows (for sake of simplicity...). This approach does not need to adjust for multiple testing, since we basically compare the complete region observed with complete simulation runs and not each window for itself.
+We want to test whether our candidate windows from above show diversity stats that are to be expected under the SNM. So our test compares whether `thres_*`  is within the maximal/minimal values of the simulations or not, i.e. we perform a Monte Carlo test with `thres_*` as the observed value.
+
+```{r coalsim}
+
+n_sample <- 2*length(data_zea@populations[[2]])
+#We need the Watterson estimator across the complete region scanned
+data_zea <- neutrality.stats(data_zea) #Computes it for all 3 pop.
+theta_est <- data_zea@theta_Watterson[[2]]
+
+com_msp  <- paste("mspms",n_sample," 1 --mutation-rate",
+                  theta_est,"--recombination 0.05 30000")
+com_msp <- paste(com_msp,"> msp_ells.txt") #Write command line output to file
+com_msp
+
+clr_max_sim <- rep(0,10)
+pi_min_sim <- rep(0,10)
+for (i in 1:10){
+
+system(com_msp)
+  coalsim <- readMS("msp_ells.txt")
+win_snps <- median(zea_sw@n.segregating.sites,na.rm=TRUE)
+coalsim <- sliding.window.transform(coalsim,width=win_snps,jump=win_snps,type=1,whole.data = TRUE) 
+#type=1 ends window after width SNPs
+
+coalsim <- neutrality.stats(coalsim) #To get nucleotide diversity
+coalsim <- detail.stats(coalsim) 
+freq_pop_c <- sapply(coalsim@region.stats@minor.allele.freqs,
+                     function(x){return(x[1,])})
+freq_pop_c <- table(unlist(freq_pop_c))
+coalsim <- sweeps.stats(coalsim, freq.table=list(freq_pop_c))
+clr_max_sim[i] <- max(coalsim@CLR)
+pi_min_sim[i] <- min(coalsim@theta_Tajima)
+}
+system("rm msp_ells.txt")
+
+plot(density(clr_max_sim),type="l",xlim=c(min(clr_max_sim,thres_clr),
+                                          max(clr_max_sim,thres_clr)),
+                                          xlab="max. CLR for simulated region samples",
+                                          main="")
+points(density(zea_sw@CLR[,2],na.rm=TRUE),type="l",col="red",lty=2) #Does SNM fit? 
+abline(v=thres_clr,col="red")
+legend("topright",legend=c("10th biggest CLR observed","CLR observed","maximum CLR under SNM (via simulation)"),col=c("red","red","black"),lty=c(1,2,1))
+
+#How to make an approx. Monte Carlo test 
+clr_obs <- thres_clr
+data_null <- c(clr_max_sim,clr_obs)
+(clr_p <- sum(data_null>=clr_obs)/length(data_null))
+```
+
+ * Do the Monte Carlo test for $\Pi$
+
+# Found signals: further considerations (OPTIONAL)
+
+The next step is to have a closer look at the candidate loci: For the 27 chosen windows, we look at all diversity statistics in all populations.
+
+```{r cand_compare}
+#Write all stats in a data frame
+div_stats <- data.frame(pi=zea_sw@theta_Tajima,Watt=zea_sw@theta_Watterson,
+                        TajD=zea_sw@Tajima.D,CLR=zea_sw@CLR)
+div_stats[cand_div,]
+div_stats[cand_clr,]
+```
+
+We know that the domestication locus \textit{tb1} is located within the scanned region. According to [`maizegdb.org`] (http://maizegdb.org/gene_center/gene/12671), it is located on Chromosome 1 either at 
+ * 265,745,979 and 265,747,712 (according to a gene model)
+ * 266,933,205 and 267,210,124 (genetically mapped according to closest physically linked loci)
+
+```{r cand_coord}
+zea_sw@region.names[cand_div]
+zea_sw@region.names[cand_clr]
+```
+We have one hit close to the genetically mapped position. 
+
+# Assignment: Analyse "your" simulated data set
+
+ * Pick your data set (1 x Fasta file and 1 x position table)
+ * This is a simulated SNP set, we have to manually adjust the right positions
+ * Recombination parameters: $\rho=0.05$, 10,000 recombination break points
+ * This is a single population, so you need to adjust some commands
+
+Here is the changed routine to read in the data
+```{r read_in_SNP_fasta, eval=FALSE}
+#Make a folder and move your Fasta file there
+data_day2 <- readData("data_day2/",format="Fasta",SNP.DATA = TRUE)
+position1 <- unname(unlist(read.table("sweep_posID§.txt"))) 
+data_day2 <- set.ref.positions(data_day2,list(position1))
+```
+
+Tasks:
+
+ * Describe basic parameters: Number of individuals, number of sites scanned, number of SNPs
+ * Sliding windows plots (10 kb windows) for $\Pi$, $\theta_w$, Tajima's $D$ and CLR
+ * Compare $\Pi$ and $CLR$ to simulations under the SNM matching your data
+ * Argue whether you see a sweep signal and where it is located
+ * Form: R Markdown document and pdf or html output

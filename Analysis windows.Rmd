@@ -1,35 +1,57 @@
 ---
-title: "Assignment 1"
+title: "Assignment"
 author: "Alejandro"
 date: "August 7, 2017"
 output: html_document
 ---
 # Window Analysis of Genomic Diversity
 
+### Loading data and basic descriptives
+
 Using the simulated datafile 11 multiple genomic diversity analysis will be performed using sliding windows analysis. 
 ```{r}
 library(PopGenome)
+library(tidyverse)
 #first we load data from adjacent folder that contains SNPs
 simulation <- readData(path = "simulation/",format="Fasta",SNP.DATA = T)
 position1 <- unlist(read.table("sweep_posID11.txt")) #associate data with positions
 simulation <- set.ref.positions(simulation,list(position1))
 ```
 
+Let's look at our data. We will want to know the number of individuals analyzed, the number of sites scanned and the number of SNPs.
+```{r}
+snps<-length(position1)#this gives us the range of sites scanned
+individuals<-length(simulation@region.data@populations)#this gives us the number of haplotypes in our data
+rangeSNP<-range(simulation@region.data@biallelic.sites)#this gives us the length of bp covered by our SNP data
+```
+
+
 To calculate the sliding windows we will need to know the range of positions that we are working with. 
 ```{r}
 #get the range of our data to define sliding windows for the analysis
 get.sum.data(simulation)
-range<-range(simulation@region.data@biallelic.sites)
 #definition of sliding windows
-sim_sw<- sliding.window.transform(simulation,width=5000,
-                                   jump=5000,start.pos = range[1],
-                                   end.pos =range[2], type=2,whole.data=TRUE)
+sim_sw<- sliding.window.transform(simulation,width=10000,
+                                   jump=10000,start.pos = rangeSNP[1],
+                                   end.pos =rangeSNP[2], type=2,whole.data=TRUE)
 ```
 
-Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson) and Tajima's $D$ (. We do this with *neutrality.stats*, which actually calculates a ton of statistical measures. We will see a whole table with 
+Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson) and Tajima's $D$ (Tajima.D). We do this with *neutrality.stats*, which actually calculates a ton of statistical measures, we can obtain them with. We will see a whole table with the summary function, with the calculations of each parameter for the 10kB windows.
 ```{r}
 sim_sw <- neutrality.stats(sim_sw) #this adds into the sim_sw GENOME file a series of diversity statistics, including 
-lapply(get.neutrality(sim_sw, theta=T),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
-
+#lapply(get.neutrality(sim_sw),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
+summary(sim_sw@Tajima.D);summary(sim_sw@theta_Tajima);summary(sim_sw@theta_Watterson)
+broom(lapply(get.neutrality(sim_sw,theta=T),summary))
+lapply(c(sim_sw@theta_Tajima, sim_sw@theta_Watterson, sim_sw@Tajima.D),summary)
 ```
+
+We can plot the estimated parameters in a graph, per window, to have an idea of what regions might be affected by a selective sweep.
+```{r}
+xaxis <- strsplit(sim_sw@region.names,split=" : ")
+xaxis <- sapply(xaxis,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})
+plot(xaxis,sim_sw@theta_Tajima,type="l",ylab="Indexes values",xlab="Nucleotide positions")
+plot(xaxis,sim_sw@theta_Watterson,type="l",col="blue")
+plot(xaxis,sim_sw@Tajima.D,type="l",col="red")
+```
+
 
