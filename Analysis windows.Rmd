@@ -1,39 +1,39 @@
 ---
-title: "Assignment"
+title: "Window Analysis of Genomic Diversity"
 author: "Alejandro Thérèse Navarro"
 date: "August 7, 2017"
 output: html_document
 ---
-```{r setup,include=F}
-knitr::opts_chunk$set(echo=T)
+```{r setup,include=F,tidy=T}
+knitr::opts_chunk$set(echo=T,warning = F)
 ```
 
-# Window Analysis of Genomic Diversity
+#### Loading data and basic descriptives
 
-### Loading data and basic descriptives
-
-Using the simulated datafile 11 multiple genomic diversity analysis will be performed using sliding windows analysis. 
-```{r}
+Using the simulated datafile 11 multiple genomic diversity analysis will be performed using sliding windows analysis.
+```{r, message=F, results="hide"}
 library(PopGenome)
+
 #first we load data from adjacent folder that contains SNPs
-simulation <- readData(path = "simulation/",format="Fasta",SNP.DATA = T)
-position1 <- unlist(read.table("sweep_posID11.txt")) #associate data with positions
-simulation <- set.ref.positions(simulation,list(position1))
+simulation <- readData(path = "simulation",format="Fasta",SNP.DATA = T,progress_bar_switch=F)
+position <- unlist(read.table("sweep_posID11.txt")) #associate data with positions
+simulation <- set.ref.positions(simulation,list(position))
 ```
 
 Let's look at our data. We will want to know the number of individuals analyzed, the number of sites scanned and the number of SNPs.
 ```{r}
-snps<-length(position1)#this gives us the range of sites scanned
-individuals<-length(simulation@region.data@populations)#this gives us the number of haplotypes in our data
+snps<-length(position)#this gives us the range of sites scanned
+print(snps)
+individuals<-length(simulation@region.data@populations[[1]][[1]])#this gives us the number of haplotypes in our data. 
+print(individuals) #We don't know why, but this is giving, in windows, 60 individuals rather than 30 (?)
 rangeSNP<-range(simulation@region.data@biallelic.sites)#this gives us the length of bp covered by our SNP data
+print(rangeSNP)
 ```
 
-### Sliding windows statistics
+## Sliding windows statistics
 
-To calculate the sliding windows we will need to know the range of positions that we are working with. 
-```{r}
-#get the range of our data to define sliding windows for the analysis
-get.sum.data(simulation)
+To calculate the sliding windows we will need to use the range of SNPs we are working with, that is in the `rangeSNP` object. 
+```{r, results="hide"}
 #definition of sliding windows
 size_sw<-8000 #we set the length of the windows to be analyzed
 sim_sw<- sliding.window.transform(simulation,width=size_sw,
@@ -41,35 +41,38 @@ sim_sw<- sliding.window.transform(simulation,width=size_sw,
                                    end.pos =rangeSNP[2], type=2,whole.data=TRUE)
 ```
 
-Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson) and Tajima's $D$ (Tajima.D). We do this with `neutrality.stats`, which actually calculates a ton of statistical measures, we can obtain them with. We will see a whole table with the `summary` function, with the calculations of each parameter for the 10kB windows.
-```{r}
+Afterwards, we will calculate $\Pi$ (theta_Tajima), $\theta_w$ (theta_Watterson) and Tajima's $D$ (Tajima.D). We do this with `neutrality.stats`, which actually calculates a ton of statistical measures, we can obtain them with. We will see a whole table with the `summary` function, with the calculations of each parameter for the 8kB windows.
+```{r, results="hide",message=F}
 sim_sw <- neutrality.stats(sim_sw) #this adds into the sim_sw GENOME file a series of diversity statistics, including 
-lapply(get.neutrality(sim_sw),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
+```
+```{r}
+lapply(get.neutrality(sim_sw,theta=T),summary) #if we apply the summary function to the list of results we have observed with the lapply function, we can see a set of summaries of all the indexes calculated. 
 ```
 
 We will calculate the $CLR$ values as well.
-```{r}
+```{r, results="hide"}
 sim_sw<- detail.stats(sim_sw)
 freq1 <- table(unlist(sapply(sim_sw@region.stats@minor.allele.freqs,function(x){return(x[1,])})))
 sim_sw<- sweeps.stats(sim_sw,freq.table=list(freq1))
 CLRdata<-sim_sw@CLR
 ```
-
+####Plotting statistics
 We can plot the estimated parameters per window, to have an idea of what regions might be affected by a selective sweep.
 ```{r}
-xaxis <- strsplit(sim_sw@region.names,split=" : ")
-xaxis <- sapply(xaxis,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})
+xaxis <- strsplit(sim_sw@region.names,split=" : ")#we obtain the names of the window margins
+xaxis <- sapply(xaxis,function(x){as.numeric(strsplit(x,split=" ")[[c(1,1)]])})#we put them into xaxis object
 
-plot(xaxis,sim_sw@theta_Tajima,type="l",ylab=expression(paste("Nucleotide diversity ",Pi)),xlab="Nucleotide positions")
-plot(xaxis,sim_sw@theta_Watterson,type="l",col="blue",ylab=expression(paste("Watterson ",theta)),xlab="Nucleotide positions")
-plot(xaxis,sim_sw@Tajima.D,type="l",col="red",ylab="Tajima's D",xlab="Nucleotide positions")
-plot(xaxis,CLRdata,type="l",col="green",ylab="CLR values",xlab="Nucleotide positions")
+plot(xaxis,sim_sw@theta_Tajima,type="l",ylab=expression(paste("Nucleotide diversity ",Pi)),xlab="Nucleotide positions",main=expression(paste(Pi,"per window")))
+plot(xaxis,sim_sw@theta_Watterson,type="l",col="blue",ylab=expression(paste("Watterson ",theta)),xlab="Nucleotide positions",main=expression(paste("Watterson's",theta,"per window")))
+plot(xaxis,sim_sw@Tajima.D,type="l",col="red",ylab="Tajima's D",xlab="Nucleotide positions",main="Tajima's D per window")
+plot(xaxis,CLRdata,type="l",col="green",ylab="CLR values",xlab="Nucleotide positions",main="CLR per window")
 ```
-It is important to know that  $\Pi$, $\theta_w$ and Tajima's $D$ indicate a selective sweep in zones where the value drops, while it is peaks in the $CLR$ what indicates a selective sweep. From this analysis we see that there might be a sweep between ~20000bp and ~60000bp. However, it would be better to be able to compare directly the measurements.
 
+It is important to know that  $\Pi$, $\theta_w$ and Tajima's $D$ indicate a selective sweep in zones where the value drops, while it is peaks in the $CLR$ what indicates a selective sweep. From this analysis we see that there might be a sweep between ~20000bp and ~60000bp. However, it would be better to be able to compare directly the measurements.
+####Comparison plots
 Generating overlapping plots of the four measurments is complex due to different mean values and different range of each index. Therefore, it will be useful to compare which are the most extreme values obtained by each estimator. If we plot which windows have had the lowest score (or highest in case of the $CLR$), we will be able to better decide which windows have a higher indication of being under selective sweep.
 ```{r}
-top<-5 #we establish the top extreme values that we will choose
+top<-3 #we establish the top extreme values that we will choose
 
 #Each of these lines selects window number in which the estimates are equal or smaller (except for CLR, where we take the highest) to the 5th most extreme value of the estimator. This will be the points we want to plot. 
 cand_pi <- which(sim_sw@theta_Tajima<=sort(sim_sw@theta_Tajima)[top])
@@ -89,11 +92,12 @@ axes_sw<-c(size_sw*num_sw)#we create axes labels that contain the limits of each
 axis(1,num_sw,labels=axes_sw,at=num_sw+0.5,tick=T)#the labels are plotted so that the points are plotted in the middle of two axis ticks
 legend("topleft",legend=c("Nucleotide diversity","Watterson's estimator","CLR","Tajima's D"),col=c("black","blue","green","red"),lty=c(1,1,1,1),bty="n")
 ```
-From the obtained plot we can see that $\Pi$ and Watterson's $\theta$ seem to point to the region between 34000bp and 80000bp. However, both Tajima's $D$ and $CLR$ seem to be randomly distributed, pointing at spread regions across our sequences.
+
+From the obtained plot we can see that $\Pi$ and Watterson's $\theta$ seem to point to the region between 32000bp and 72000bp. However, both Tajima's $D$ and $CLR$ seem to be randomly distributed, pointing at spread regions across our sequences.
 
 ###Simulation data analysis
 
-Because of the conflictivity of our results, obtaining a p-value that more definately tells us whether there are selective sweeps would be nice. For that we will simulate using the `msprime` package a population in which there is no selection modelled. According to the Monte Carlo test method, we can compare the distribution of $CLR$ values obtained via the simulation with the distribution of the observed CLR values. We can compute an approximate p-value that indicates the probability that the simulation model (without selection) adequately models our observed data.
+Because of the conflictivity of our results, obtaining a **p-value** that more definately tells us whether there are selective sweeps would be nice. Using Monte Carlo theory, we can generate a _null hypothesis distribution_, so to speak. For that we will simulate a population without selection using the program `msprime`. We can compare how the observed values fit with the null distribution, allowing us to evaluate whether what we observe indicates a selective sweep.
 ```{r}
 load("sim_tp/sim_sweepstatsID11.RData") #loading of the simulation objects
 
@@ -110,5 +114,22 @@ plot(density(clr_max_sim),type="l",xlim=c(min(density(clr_max_sim)$x,density(sim
 points(density(sim_sw@CLR,na.rm=TRUE),type="l",col="red",lty=2) #The "real data"
 abline(v=thres_clr,col="red") #the threshold of the candidate windows
 legend("topright",legend=c("5th biggest CLR observed","CLR observed","maximum CLR under SNM (via simulation)"),col=c("red","red","black"),lty=c(1,2,1))
+
+#we can do the same procedure with nucleotide diversity
+thres_Pi<-sort(sim_sw@theta_Tajima)[top]
+data_null_Pi<-c(pi_min_sim,thres_Pi)
+Pi_p<-sum(data_null_Pi<=thres_Pi)/length(data_null_Pi)
+
+#plot Pi
+plot(density(pi_min_sim),type="l",xlim=c(min(density(pi_min_sim)$x,density(sim_sw@theta_Tajima)$x),
+                                          max(density(pi_min_sim)$x,density(sim_sw@theta_Tajima)$x)),
+     ylim=c(0,max(density(pi_min_sim)$y,density(sim_sw@theta_Tajima,na.rm=T)$y)),
+     xlab="Pi values",main="Simulated and Observed Pi",sub=paste("Monte Carlo p-value test =",round(Pi_p,digits=2)))
+points(density(sim_sw@theta_Tajima,na.rm=TRUE),type="l",col="red",lty=2) #The "real data"
+abline(v=thres_Pi,col="red") #the threshold of the candidate windows
+legend("topright",legend=c("3rd biggest Pi observed","Pi observed","minimum Pi under SNM (via simulation)"),col=c("red","red","black"),lty=c(1,2,1))
 ```
-We can see that the observed threshold for the regions most likely under a selective sweep (according to the CLR) actually falls withing the most common CLR values found with our null hypothesis distribution. Similarly, our **p-value=0.91** indicates that the observed and null hypothesis distributions are very similar, meaning that according to CLR it is highly unlikely that there are any windows under slective sweep in our data. 
+
+Analysing both the $CLR$ and $Pi$ simulated distributions we see that there is no evidence for a selective sweep (both **p-values over** 0.05). Importantly, the "extreme" values are to the right in the $CLR$ graph and to the lefth in the $Pi$ graph.
+
+Therefore, we can say that in the fasta files analyzed there is no evidence of selective sweeps.
